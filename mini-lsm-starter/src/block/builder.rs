@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
+use bytes::BufMut;
 
 use crate::key::{KeySlice, KeyVec};
 
@@ -34,23 +33,53 @@ pub struct BlockBuilder {
 impl BlockBuilder {
     /// Creates a new block builder.
     pub fn new(block_size: usize) -> Self {
-        unimplemented!()
+        Self {
+            offsets: vec![],
+            data: vec![],
+            block_size: block_size,
+            first_key: KeyVec::new(),
+        }
+    }
+
+    fn usize_to_u8_vec(n: usize) -> Vec<u8> {
+        let low = (n & 0xFF) as u8; // 获取低字节
+        let high = ((n >> 8) & 0xFF) as u8; // 获取高字节
+        vec![high, low]
     }
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     /// You may find the `bytes::BufMut` trait useful for manipulating binary data.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-        unimplemented!()
+        if self.is_empty() {
+            self.first_key = key.to_key_vec();
+        }
+        let key_size = key.len();
+        let value_size = value.len();
+        let entry_size = key_size + value_size;
+        let current_size = self.data.len() + self.offsets.len() * 2;
+        if current_size != 0 && current_size + entry_size + 4 > self.block_size {
+            return false;
+        }
+        self.offsets.push(current_size as u16);
+        self.data.put_u16(key_size as u16);
+        self.data.put_slice(key.raw_ref());
+        self.data.put_u16(value_size as u16);
+        self.data.put_slice(value);
+
+        return true;
     }
 
     /// Check if there is no key-value pair in the block.
     pub fn is_empty(&self) -> bool {
-        unimplemented!()
+        self.offsets.is_empty()
     }
 
     /// Finalize the block.
     pub fn build(self) -> Block {
-        unimplemented!()
+        Block {
+            data: self.data,
+            offsets: self.offsets,
+        }
     }
 }
