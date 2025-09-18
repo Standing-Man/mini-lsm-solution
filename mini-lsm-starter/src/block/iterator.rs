@@ -121,15 +121,24 @@ impl BlockIterator {
         self.seek_to_index(0);
         self.first_key = self.key.clone();
 
-        for idx in 0..self.block.offsets.len() {
-            self.seek_to_index(idx);
-            if idx == 0 {
-                self.first_key = self.key.clone();
-            }
-            if self.key() >= key {
-                self.idx = idx;
-                break;
+        let mut left = 0;
+        let mut right = self.block.offsets.len();
+        while left < right {
+            let mid = left + (right - left) / 2;
+            self.seek_to_index(mid);
+            assert!(self.is_valid());
+            match self.key().cmp(&key) {
+                std::cmp::Ordering::Less => left = mid + 1,
+                std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => right = mid,
             }
         }
+        // if all keys are less than `key`,
+        // then the search index is `self.block.offsets.len()`
+        if left >= self.block.offsets.len() {
+            self.key.clear();
+            self.value_range = (0, 0);
+            return;
+        }
+        self.seek_to_index(left);
     }
 }
