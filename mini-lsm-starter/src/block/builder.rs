@@ -41,12 +41,6 @@ impl BlockBuilder {
         }
     }
 
-    fn usize_to_u8_vec(n: usize) -> Vec<u8> {
-        let low = (n & 0xFF) as u8; // 获取低字节
-        let high = ((n >> 8) & 0xFF) as u8; // 获取高字节
-        vec![high, low]
-    }
-
     /// Adds a key-value pair to the block. Returns false when the block is full.
     /// You may find the `bytes::BufMut` trait useful for manipulating binary data.
     #[must_use]
@@ -56,12 +50,13 @@ impl BlockBuilder {
         }
         let key_size = key.len();
         let value_size = value.len();
-        let entry_size = key_size + value_size;
-        let current_size = self.data.len() + self.offsets.len() * 2;
-        if current_size != 0 && current_size + entry_size + 4 > self.block_size {
+        let entry_size = key_size + value_size + 4;
+        let data_size = self.data.len();
+        let current_size = data_size + self.offsets.len() * 2;
+        if current_size != 0 && current_size + entry_size > self.block_size {
             return false;
         }
-        self.offsets.push(current_size as u16);
+        self.offsets.push(data_size as u16);
         self.data.put_u16(key_size as u16);
         self.data.put_slice(key.raw_ref());
         self.data.put_u16(value_size as u16);
