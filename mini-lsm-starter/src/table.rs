@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 pub use builder::SsTableBuilder;
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
 
 use crate::block::Block;
@@ -53,12 +53,39 @@ impl BlockMeta {
         #[allow(clippy::ptr_arg)] // remove this allow after you finish
         buf: &mut Vec<u8>,
     ) {
-        unimplemented!()
+        for meta in block_meta {
+            // push the offset on the whole meta
+            let offset = meta.offset as u32;
+            buf.put_u32(offset);
+            // push the len of first key about meta
+            let first_key_len = meta.first_key.len() as u16;
+            buf.put_u16(first_key_len);
+            // push first key about meta
+            buf.put_slice(meta.first_key.raw_ref());
+            // push the len of last value about meta
+            let last_key_len = meta.last_key.len() as u16;
+            buf.put_u16(last_key_len);
+            // push last key about meta
+            buf.put_slice(meta.last_key.raw_ref());
+        }
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(buf: impl Buf) -> Vec<BlockMeta> {
-        unimplemented!()
+    pub fn decode_block_meta(mut buf: impl Buf) -> Vec<BlockMeta> {
+        let mut block_metas = vec![];
+        while buf.has_remaining() {
+            let offset = buf.get_u32() as usize;
+            let first_key_len = buf.get_u16() as usize;
+            let first_key = buf.copy_to_bytes(first_key_len);
+            let last_key_len = buf.get_u16() as usize;
+            let last_key = buf.copy_to_bytes(last_key_len);
+            block_metas.push(BlockMeta {
+                offset,
+                first_key: KeyBytes::from_bytes(first_key),
+                last_key: KeyBytes::from_bytes(last_key),
+            });
+        }
+        block_metas
     }
 }
 
@@ -122,7 +149,24 @@ impl SsTable {
 
     /// Open SSTable from a file.
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
-        unimplemented!()
+        let size = file.size();
+        let offset = file.read(size - 4, 4)?;
+        let meta_offset = u32::from_be_bytes(offset.try_into().unwrap()) as u64;
+        let meta_buf = file.read(meta_offset, size - 4 - meta_offset)?;
+        let meta = BlockMeta::decode_block_meta(meta_buf.as_slice());
+        let first_key = meta.first().unwrap().first_key.clone();
+        let last_key = meta.last().unwrap().last_key.clone();
+        Ok(Self {
+            file: file,
+            block_meta: meta,
+            block_meta_offset: meta_offset as usize,
+            id: id,
+            block_cache: block_cache,
+            first_key: first_key,
+            last_key: last_key,
+            bloom: None,
+            max_ts: 0,
+        })
     }
 
     /// Create a mock SST with only first key + last key metadata
